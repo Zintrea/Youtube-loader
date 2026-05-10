@@ -28,12 +28,21 @@ def get_download_options(choice):
         base_opts['merge_output_format'] = 'mp4'
         
     elif choice == '4':
-        # เฉพาะเสียง (แปลงเป็น MP3)
+        # เฉพาะเสียง (MP3 คุณภาพสูงสุด 320kbps)
         base_opts['format'] = 'bestaudio/best'
         base_opts['postprocessors'] = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '192', # คุณภาพเสียง 192kbps
+            'preferredquality': '320', # อัปเกรดจาก 192 เป็น 320
+        }]
+        
+    elif choice == '5':
+        # เฉพาะเสียงต้นฉบับ (M4A/AAC เสียงใสที่สุด ไม่ผ่านการบีบอัดซ้ำ)
+        # ดึงไฟล์เสียงที่ดีที่สุดที่เป็นนามสกุล m4a มาเลย
+        base_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
+        base_opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'm4a',
         }]
     else:
         print("ตัวเลือกไม่ถูกต้อง จะใช้ค่าเริ่มต้น (1080p)")
@@ -66,9 +75,10 @@ if __name__ == "__main__":
         print("1. วิดีโอ 1080p (MP4 - ภาพชัดสุด เปิดในมือถือได้)")
         print("2. วิดีโอ 720p  (MP4 - ประหยัดพื้นที่ลงมา)")
         print("3. วิดีโอ 480p  (MP4 - ไฟล์เล็กมาก โหลดไว)")
-        print("4. เฉพาะเสียง   (MP3 - สำหรับฟังเพลงหรือแกะคอร์ด)")
+        print("4. เฉพาะเสียง   (MP3 - 320kbps เปิดได้ทุกเครื่องบนโลก)")
+        print("5. เฉพาะเสียง   (M4A - เสียงต้นฉบับ ชัดใส แนะนำสำหรับมือถือ/คอมฯ ยุคนี้)")
         
-        choice = input("\nพิมพ์หมายเลข (1-4): ").strip()
+        choice = input("\nพิมพ์หมายเลข (1-5): ").strip()
         download_youtube_video(video_url, choice)
     else:
         print("คุณไม่ได้ใส่ URL โปรแกรมจบการทำงาน")
