@@ -152,3 +152,13 @@ async def list_downloads(
 ) -> dict[str, Any]:
     """List all downloaded files."""
     return {"files": storage_service.list_files()}
+
+
+@router.get("/video-info")
+async def get_video_info(
+    url: str,
+    yt_service: YoutubeService = Depends(get_youtube_service),
+) -> dict[str, Any]:
+    """Retrieve metadata for a YouTube video (title, duration, thumbnail)."""
+    info = yt_service.get_video_info(url)
+    return info
