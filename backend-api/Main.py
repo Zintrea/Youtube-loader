@@ -10,7 +10,7 @@ app = FastAPI(title="Youtube-loader API", version="0.1.0")
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if x.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
