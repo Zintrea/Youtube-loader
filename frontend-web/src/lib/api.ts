@@ -57,3 +57,13 @@ export function getJobStatus(jobId: string): Promise<JobStatus> {
 export function listDownloads(): Promise<DownloadsList> {
   return request('/api/downloads')
 }
+
+export function getFileUrl(filename: string): string {
+  return `${API_BASE}/api/files/${encodeURIComponent(filename)}`
+}
+
+export async function deleteFile(filename: string): Promise<void> {
+  await request(`/api/files/${encodeURIComponent(filename)}`, {
+    method: 'DELETE',
+  })
+}

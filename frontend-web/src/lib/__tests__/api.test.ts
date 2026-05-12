@@ -1,6 +1,6 @@
 // src/lib/__tests__/api.test.ts
 
-import { startDownload, getJobStatus, listDownloads } from '../api'
+import { startDownload, getJobStatus, listDownloads, getFileUrl, deleteFile } from '../api'
 
 const API_BASE = 'http://localhost:8000'
 
@@ -121,6 +121,47 @@ describe('API client', () => {
       vi.stubGlobal('fetch', mockFetch)
 
       await expect(listDownloads()).rejects.toThrow('Failed')
+    })
+  })
+
+  describe('getFileUrl', () => {
+    it('returns correct URL for a simple filename', () => {
+      const url = getFileUrl('video.mp4')
+      expect(url).toBe(`${API_BASE}/api/files/video.mp4`)
+    })
+
+    it('encodes special characters in filename', () => {
+      const url = getFileUrl('my video (1).mp4')
+      expect(url).toBe(`${API_BASE}/api/files/my%20video%20(1).mp4`)
+    })
+  })
+
+  describe('deleteFile', () => {
+    it('calls DELETE /api/files/{filename}', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      await deleteFile('video.mp4')
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${API_BASE}/api/files/video.mp4`,
+        expect.objectContaining({
+          method: 'DELETE',
+        })
+      )
+    })
+
+    it('throws on non-ok response', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      await expect(deleteFile('nonexistent.mp4')).rejects.toThrow('Failed')
     })
   })
 })
