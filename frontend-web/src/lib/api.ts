@@ -43,6 +43,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+export interface VideoInfo {
+  title?: string
+  duration?: number
+  thumbnail?: string
+  formats?: Array<{ format_id?: string; ext?: string; quality?: string | number }>
+  error?: string
+}
+
+export function getVideoInfo(url: string): Promise<VideoInfo> {
+  return request(`/api/video-info?url=${encodeURIComponent(url)}`)
+}
+
 export function startDownload(url: string, format: string): Promise<DownloadResponse> {
   return request('/api/download', {
     method: 'POST',

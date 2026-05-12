@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getJobStatus } from '../lib/api'
+import { getJobStatus, getFileUrl } from '../lib/api'
 import type { JobStatus } from '../lib/api'
 
-export function DownloadStatus({ jobId }: { jobId: string }) {
+export function DownloadStatus({ jobId, onNewDownload }: { jobId: string; onNewDownload?: () => void }) {
   const [status, setStatus] = useState<JobStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -53,10 +53,18 @@ export function DownloadStatus({ jobId }: { jobId: string }) {
 
   if (status.status === 'error') {
     return (
-      <div className="w-full max-w-xl mx-auto p-6">
+      <div className="w-full max-w-xl mx-auto p-6 space-y-4">
         <div className="p-4 text-lg text-red-700 bg-red-50 rounded-md border border-red-200">
           เกิดข้อผิดพลาด: {status.error || 'เกิดข้อผิดพลาดในการดาวน์โหลด'}
         </div>
+        {onNewDownload && (
+          <button
+            onClick={onNewDownload}
+            className="w-full px-6 py-4 text-xl font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-h-[56px] active:scale-[0.98]"
+          >
+            ดาวน์โหลดวิดีโอใหม่
+          </button>
+        )}
       </div>
     )
   }
@@ -68,9 +76,26 @@ export function DownloadStatus({ jobId }: { jobId: string }) {
          เสร็จสิ้น
         </div>
         {status.title && (
-          <p className="text-lg text-gray-700">
-            {status.title}
-          </p>
+          <p className="text-lg text-gray-700">{status.title}</p>
+        )}
+        {status.filepath && (
+          <div className="pt-2">
+            <a
+              href={getFileUrl(status.filepath.split('/').pop() || status.filepath)}
+              className="inline-block px-6 py-3 text-lg font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+              download
+            >
+              ดาวน์โหลดไฟล์
+            </a>
+          </div>
+        )}
+        {onNewDownload && (
+          <button
+            onClick={onNewDownload}
+            className="w-full px-6 py-4 text-xl font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-h-[56px] active:scale-[0.98]"
+          >
+            ดาวน์โหลดวิดีโอใหม่
+          </button>
         )}
       </div>
     )

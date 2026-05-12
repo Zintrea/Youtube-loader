@@ -1,6 +1,6 @@
 // src/lib/__tests__/api.test.ts
 
-import { startDownload, getJobStatus, listDownloads, getFileUrl, deleteFile } from '../api'
+import { startDownload, getJobStatus, listDownloads, getFileUrl, deleteFile, getVideoInfo } from '../api'
 
 const API_BASE = 'http://localhost:8000'
 
@@ -162,6 +162,54 @@ describe('API client', () => {
       vi.stubGlobal('fetch', mockFetch)
 
       await expect(deleteFile('nonexistent.mp4')).rejects.toThrow('Failed')
+    })
+  })
+
+  describe('getVideoInfo', () => {
+    it('calls GET /api/video-info with encoded url param', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          title: 'Test Video',
+          duration: 120,
+          thumbnail: 'https://img.youtube.com/vi/test/maxresdefault.jpg',
+        }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const result = await getVideoInfo('https://youtube.com/watch?v=xyz')
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${API_BASE}/api/video-info?url=${encodeURIComponent('https://youtube.com/watch?v=xyz')}`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+      expect(result.title).toBe('Test Video')
+      expect(result.duration).toBe(120)
+    })
+
+    it('returns error field on failure', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ error: 'Video unavailable' }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const result = await getVideoInfo('https://youtube.com/watch?v=bad')
+
+      expect(result.error).toBe('Video unavailable')
+    })
+
+    it('throws on non-ok response', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      await expect(getVideoInfo('invalid-url')).rejects.toThrow('Failed')
     })
   })
 })

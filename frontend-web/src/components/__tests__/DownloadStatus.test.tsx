@@ -9,6 +9,7 @@ vi.mock('../../lib/api', () => ({
   getJobStatus: vi.fn(),
   startDownload: vi.fn(),
   listDownloads: vi.fn(),
+  getFileUrl: vi.fn((filename) => `http://localhost:8000/api/files/${filename}`),
 }))
 
 describe('DownloadStatus', () => {
