@@ -16,6 +16,8 @@ class FileStorageService:
             target_filename: The name to save it as in the base directory.
         """
         target_path = self.base_dir / target_filename
+        if target_path.exists():
+            target_path.unlink()
         current_path.rename(target_path)
         return target_path
 
