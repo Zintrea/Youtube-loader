@@ -1,216 +1,371 @@
-```markdown
-# 📥 Youtube-loader (Web Application Edition 2026)
+# 📥 YouTube Loader
 
-โปรแกรมดาวน์โหลดวิดีโอและแยกไฟล์เสียงจาก YouTube ที่ถูกยกระดับสถาปัตยกรรมเป็น Web Application อย่างเต็มรูปแบบ โดยแบ่งแยกการทำงานระหว่าง **Frontend (Next.js/React)** สำหรับส่วนแสดงผล และ **Backend (FastAPI/Python)** สำหรับประมวลผลการดาวน์โหลดผ่าน `yt-dlp` และ `FFmpeg`
+> ดาวน์โหลดวิดีโอและเสียงจาก YouTube — ง่าย, เร็ว, ใช้งานได้ผ่านมือถือทุกที่
 
-โปรเจคต์นี้ถูกออกแบบโครงสร้างให้รองรับการขยายสเกลในอนาคต (Scalable Architecture) ทำให้ง่ายต่อการเพิ่มฟีเจอร์ใหม่ ๆ เข้าไป
+Full-stack YouTube downloader with a **FastAPI backend** and **Next.js frontend**. Designed to be simple enough for anyone in your family to use — paste a link, pick a format, and download. Works on mobile and desktop browsers.
 
 ---
 
-## 🏗️ Project Architecture & Folder Structure
+## ✨ Features
 
-เพื่อความเป็นระเบียบและป้องกันโค้ดตีกัน โปรเจคต์นี้ใช้มาตรฐานการตั้งชื่อดังนี้:
-- **โฟลเดอร์ (Directories):** ใช้รูปแบบ `kebab-case` (เช่น `backend-api`, `core-services`)
-- **ไฟล์ (Files):** ใช้รูปแบบ `PascalCase` (เช่น `Main.py`, `YoutubeService.py`, `Page.tsx`)
+- 🎬 **Download YouTube videos** in 1080p, 720p, or 480p (MP4)
+- 🎵 **Extract audio** as MP3 (320kbps) or M4A
+- 📱 **Mobile-friendly UI** with large touch targets — works great on phones
+- 📂 **File management** — browse, play, and delete downloaded files from the web
+- 🔄 **Async downloads** — start a download and the UI polls for status automatically
+- 🧪 **114 tests** (78 backend + 36 frontend) — TDD throughout
+- 🐳 **Docker ready** — single `docker compose up` to run everything
 
-```text
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Frontend (Next.js)                │
+│  localhost:3000  │  Mobile browser  │  Desktop      │
+│  ┌─────────────────────────────────────────────┐    │
+│  │  DownloadForm  │  DownloadStatus  │  FileList │   │
+│  └──────────────┬──────────────────────────────┘    │
+│                 │ HTTP (CORS)                        │
+└─────────────────┼────────────────────────────────────┘
+                  │
+┌─────────────────▼────────────────────────────────────┐
+│                   Backend (FastAPI)                  │
+│  localhost:8000                                      │
+│  ┌───────────┬─────────────┬────────────┐           │
+│  │ Download  │  File       │  Status    │           │
+│  │ Router    │  Router     │  Router    │           │
+│  └─────┬─────┴──────┬──────┴──────┬─────┘           │
+│        │            │             │                  │
+│  ┌─────▼─────┐  ┌───▼───────────▼───┐              │
+│  │ Youtube    │  │ FileStorage       │              │
+│  │ Service    │  │ Service           │              │
+│  │ (yt-dlp)   │  │ (list/play/delete) │             │
+│  └───────────┘  └───────────────────┘              │
+└─────────────────────────────────────────────────────┘
+```
+
+### Project Structure
+
+```
 youtube-loader/
-│
-├── backend-api/                    <-- ส่วนจัดการระบบหลังบ้าน (FastAPI)
-│   ├── venv/                       (⚠️ ห้ามนำขึ้น Git - ใช้สำหรับเก็บไลบรารี)
-│   ├── Main.py                     (จุดเริ่มต้นของเซิร์ฟเวอร์ API)
-│   ├── Requirements.txt            (รายการไลบรารีที่ต้องใช้)
-│   ├── api-routes/                 <-- จัดการ URL Endpoints
-│   │   ├── DownloadRouter.py       
-│   │   └── StatusRouter.py         
-│   ├── core-services/              <-- โลจิกการทำงานหลัก (ดาวน์โหลด/จัดการไฟล์)
-│   │   ├── YoutubeService.py       
-│   │   └── FileStorageService.py   
-│   └── config-settings/            <-- การตั้งค่าระบบ
-│       └── AppConfig.py            
-│
-└── frontend-web/                   <-- ส่วนหน้าบ้าน (Next.js/React)
-    ├── Package.json                (รายการไลบรารีฝั่งหน้าเว็บ)
-    ├── src-app/                    <-- โค้ดหลักของหน้าเว็บ
-    │   ├── Page.tsx                
-    │   └── Layout.tsx              
-    ├── components-ui/              <-- ชิ้นส่วน UI ที่นำไปใช้ซ้ำได้
-    │   ├── DownloadForm.tsx        
-    │   └── ProgressBar.tsx         
-    └── services-api/               <-- ตัวกลางสำหรับคุยกับหลังบ้าน
-        └── ApiClient.ts            
-
+├── backend-api/
+│   ├── Main.py                    # FastAPI app entrypoint
+│   ├── Requirements.txt           # Python dependencies
+│   ├── config_settings/
+│   │   └── AppConfig.py           # App configuration
+│   ├── core_services/
+│   │   ├── YoutubeService.py      # yt-dlp wrapper (download + metadata)
+│   │   └── FileStorageService.py  # File management (list/delete/move)
+│   ├── api_routes/
+│   │   ├── DownloadRouter.py      # POST /api/download, GET /api/download/{id}
+│   │   ├── FileRouter.py          # GET /api/files, GET/DELETE /api/files/{name}
+│   │   └── StatusRouter.py        # GET /api/status
+│   └── api_models/
+│       └── DownloadRequest.py     # Pydantic request/response schemas
+├── frontend-web/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx         # Root layout (Inter font, Thai lang)
+│   │   │   └── page.tsx           # Home page (DownloadForm + FileList)
+│   │   ├── components/
+│   │   │   ├── DownloadForm.tsx   # URL input + format selector
+│   │   │   ├── DownloadStatus.tsx # Polling download status display
+│   │   │   └── FileList.tsx       # Downloaded files list (play/delete)
+│   │   ├── lib/
+│   │   │   └── api.ts             # API client functions
+│   │   └── test/
+│   │       └── setup.ts           # Vitest test setup
+│   ├── vitest.config.ts           # Vitest configuration
+│   └── package.json
+├── tests/                         # Backend tests (pytest)
+│   ├── test_api.py
+│   ├── test_config.py
+│   ├── test_file_router.py
+│   ├── test_file_storage.py
+│   └── test_youtube_service.py
+├── pyproject.toml
+└── README.md
 ```
 
 ---
 
-## 🛠️ Prerequisites (สิ่งที่ต้องติดตั้งก่อนเริ่มงาน)
+## 🚀 Quick Start
 
-ก่อนจะทำการรันโปรเจคต์นี้ เครื่องคอมพิวเตอร์ของคุณต้องมีโปรแกรมพื้นฐานดังต่อไปนี้:
+### Prerequisites
 
-1. **Python 3.10+** สำหรับรัน Backend
-2. **Node.js (v18 ขึ้นไป)** สำหรับรัน Frontend
-3. **Git** สำหรับจัดการเวอร์ชันโค้ด
-4. **FFmpeg** (สำคัญมาก! สำหรับรวมภาพและเสียงเข้าด้วยกัน)
-* **Windows:** เปิด Terminal พิมพ์ `winget install ffmpeg`
-* **Mac:** เปิด Terminal พิมพ์ `brew install ffmpeg`
+- **Python 3.10+** (backend)
+- **Node.js 18+** (frontend)
+- **FFmpeg** — required by yt-dlp for merging video+audio
+  - Windows: `winget install ffmpeg`
+  - macOS: `brew install ffmpeg`
+  - Ubuntu/Debian: `sudo apt install ffmpeg`
 
+### Backend Setup
 
-
----
-
-## 🚀 Installation & Setup Guide (วิธีติดตั้งแบบจับมือทำ)
-
-กรุณาทำตามขั้นตอนด้านล่างนี้อย่างละเอียด เพื่อรันโปรเจคต์ในโหมด Development
-
-### ขั้นตอนที่ 1: เตรียมพื้นที่และ Git
-
-เปิด Terminal แล้วรันคำสั่งต่อไปนี้เพื่อโคลนโปรเจคต์ลงเครื่อง:
-
-```bash
-git clone [https://github.com/Zintrea/Youtube-loader.git](https://github.com/Zintrea/Youtube-loader.git)
-cd Youtube-loader
-
-```
-
-### ขั้นตอนที่ 2: ตั้งค่า Backend (Python / FastAPI)
-
-> ⚠️ **คำเตือนที่สำคัญมาก:** คุณต้องสร้าง Virtual Environment (`venv`) ทุกครั้งก่อนติดตั้งไลบรารี เพื่อไม่ให้แพ็กเกจไปกวนโปรเจคต์อื่นในเครื่อง!
-
-1. เข้าไปที่โฟลเดอร์หลังบ้าน:
 ```bash
 cd backend-api
 
+# Create virtual environment
+python -m venv venv  # Windows: venv\Scripts\activate
+source venv/bin/activate  # macOS/Linux
 
-```
-
-
-
-```
-2. สร้างและเปิดใช้งาน Virtual Environment:
-   ```bash
-   # สร้าง venv
-   python -m venv venv
-   
-   # เปิดใช้งาน (สำหรับ Windows)
-   venv\Scripts\activate
-   
-   # เปิดใช้งาน (สำหรับ Mac/Linux)
-   source venv/bin/activate
-   
-
-```
-
-*(เมื่อเปิดสำเร็จ จะมีคำว่า `(venv)` ขึ้นหน้าบรรทัดคำสั่งใน Terminal)*
-
-3. สร้างไฟล์ `Requirements.txt` (หากยังไม่มี) และใส่ข้อมูลนี้ลงไป:
-```text
-fastapi
-uvicorn
-yt-dlp
-websockets
-
-```
-
-
-4. ติดตั้งไลบรารีทั้งหมด:
-```bash
+# Install dependencies
 pip install -r Requirements.txt
 
-
+# Run server
+python Main.py
+# → API running at http://localhost:8000
+# → Swagger docs at http://localhost:8000/docs
 ```
 
+### Frontend Setup
 
-
-```
-5. รันเซิร์ฟเวอร์ Backend:
-   ```bash
-   uvicorn Main:app --reload
-   
-
-```
-
-*(เซิร์ฟเวอร์หลังบ้านจะรันอยู่ที่ `http://localhost:8000`)*
-
-### ขั้นตอนที่ 3: ตั้งค่า Frontend (Next.js / Node.js)
-
-ให้เปิด Terminal หน้าต่างใหม่ (แยกจากหน้าต่างที่รัน Backend ไว้)
-
-1. กลับไปที่โฟลเดอร์หลักและเข้าไปที่ส่วนหน้าบ้าน:
 ```bash
-# เริ่มจากโฟลเดอร์หลัก youtube-loader
 cd frontend-web
-
-
-```
-
-
-
-```
-2. สร้างโปรเจคต์ Next.js เบื้องต้น (หากเป็นการเริ่มโปรเจคต์ครั้งแรก):
-   ```bash
-   # ใช้คำสั่งนี้ถ้าเพิ่งเริ่มสร้างโครงสร้าง
-   npx create-next-app@latest .
-   
-
-```
-
-3. ติดตั้งไลบรารีที่จำเป็น (ถ้ามี `Package.json` อยู่แล้ว):
-```bash
 npm install
-
-```
-
-
-4. รันเซิร์ฟเวอร์ Frontend:
-```bash
 npm run dev
-
-
+# → Frontend running at http://localhost:3000
 ```
 
+### Run Tests
 
+```bash
+# Backend tests
+cd backend-api && .venv/bin/python -m pytest tests/ -v
 
+# Frontend tests
+cd frontend-web && npm test
 ```
-   *(หน้าเว็บของคุณจะแสดงผลที่ `http://localhost:3000`)*
 
 ---
 
-## 💻 How to Develop & Contribute (คู่มือการพัฒนาต่อ)
+## 📡 API Endpoints
 
-เมื่อคุณต้องการเขียนโค้ดเพิ่ม หรือแก้ไขบั๊ก ให้ยึดหลักการทำงานตามโครงสร้างนี้:
+### Download
 
-### 1. ถ้าต้องการเพิ่มฟีเจอร์ดาวน์โหลดเว็บอื่น (เช่น TikTok, Facebook)
-- **ไม่ต้องยุ่งกับไฟล์เดิม:** ให้ไปสร้างไฟล์ใหม่ที่ `backend-api/core-services/TiktokService.py`
-- แล้วไปเพิ่มเส้นทาง URL ใหม่ที่ `backend-api/api-routes/`
-- วิธีนี้จะทำให้โค้ดไม่พัง และแยกการทำงานกันอย่างชัดเจน
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/download` | `{ url, output_format }` | Start a download (returns `job_id`) |
+| `GET`  | `/api/download/{job_id}` | — | Check download status |
 
-### 2. การจัดการไฟล์ที่ดาวน์โหลดเสร็จแล้ว
-- โลจิกทั้งหมดเกี่ยวกับการเซฟไฟล์ ย้ายไฟล์ หรือลบไฟล์ขยะ จะถูกเขียนไว้ในโฟลเดอร์ `backend-api/core-services/FileStorageService.py` เท่านั้น เพื่อให้ง่ายต่อการดูแล
+**Supported formats:** `1080p`, `720p`, `480p`, `mp3`, `m4a`
 
-### 3. การแสดงผล UI ฝั่งหน้าเว็บ
-- หากแถบดาวน์โหลดบั๊ก หรือหน้าตาปุ่มไม่สวย ให้เข้าไปแก้ที่ `frontend-web/components-ui/` 
-- หลีกเลี่ยงการเขียนสไตล์หรือลอจิกทุกอย่างรวมไว้ในหน้าเดียว (`Page.tsx`) ให้แยกเป็น Component เสมอ
+### Files
 
-## 📝 Git Workflow (ข้อแนะนำในการเซฟงาน)
-เนื่องจากเราแยกส่วนหน้าบ้านและหลังบ้านออกจากกัน เวลาเซฟงาน (Commit) ควรแยกกันอย่างชัดเจน:
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/files` | List all downloaded files |
+| `GET` | `/api/files/{filename}` | Download/stream a specific file |
+| `DELETE` | `/api/files/{filename}` | Delete a file |
+
+### System
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/status` | Health check |
+| `GET` | `/api/downloads` | Legacy file list (from FileStorageService) |
+
+### Example: Start Download
+
 ```bash
-# ตรวจสอบสถานะก่อนเสมอ
-git status
-
-# ถ้าทำฝั่งหลังบ้านเสร็จ
-git add backend-api/
-git commit -m "อัปเดตระบบดาวน์โหลดใน YoutubeService.py"
-
-# ถ้าทำฝั่งหน้าบ้านเสร็จ
-git add frontend-web/
-git commit -m "ปรับปรุงหน้าตา ProgressBar.tsx"
-
-git push origin main
-
+curl -X POST http://localhost:8000/api/download \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.youtube.com/watch?v=VIDEO_ID", "output_format": "720p"}'
 ```
 
+Response:
+```json
+{
+  "job_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "status": "pending"
+}
 ```
 
+### Example: Check Status
+
+```bash
+curl http://localhost:8000/api/download/a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+Response (completed):
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "url": "https://www.youtube.com/watch?v=VIDEO_ID",
+  "format": "720p",
+  "status": "completed",
+  "title": "Video Title Here",
+  "filepath": "/path/to/video.mp4"
+}
+```
+
+---
+
+## 📱 How to Use on Mobile
+
+### Option A: Same WiFi Network
+
+1. Find your PC's local IP address:
+   - Windows: `ipconfig` → look for "IPv4 Address" (e.g., `192.168.1.100`)
+   - macOS/Linux: `ip addr` or `ifconfig`
+2. Start the backend: `python backend-api/Main.py`
+3. Start the frontend: `cd frontend-web && npm run dev -- -H 0.0.0.0`
+4. On your phone, open: `http://192.168.1.100:3000`
+
+### Option B: Cloudflare Tunnel (Public URL — Free)
+
+1. Install cloudflared:
+   ```bash
+   # macOS
+   brew install cloudflared
+   # Linux
+   curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared && chmod +x cloudflared && sudo mv cloudflared /usr/local/bin/
+   # Windows (winget)
+   winget install --id Cloudflare.cloudflared
+   ```
+
+2. Run tunnel:
+   ```bash
+   cloudflared tunnel --url http://localhost:3000
+   ```
+
+3. You'll get a URL like `https://abc-123.trycloudflare.com` — share this with your mom!
+
+### Option C: Deploy to Cloud (Render/Railway/Fly.io)
+
+See the Docker Compose section below for containerized deployment.
+
+---
+
+## 🐳 Docker Compose
+
+Create `docker-compose.yml` in the project root:
+
+```yaml
+version: '3.8'
+services:
+  backend:
+    build: ./backend-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - downloads:/app/Downloads
+    environment:
+      - DOWNLOAD_DIR=/app/Downloads
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend-web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  downloads:
+```
+
+```bash
+docker compose up -d
+```
+
+Downloads are persisted in the `downloads` volume between restarts.
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.12, FastAPI, uvicorn, yt-dlp |
+| Frontend | Next.js 15 (App Router), TypeScript, Tailwind CSS |
+| Testing | pytest (backend), Vitest + React Testing Library (frontend) |
+| Data fetching | SWR (auto-polling for download status + file list) |
+| Video/Audio | yt-dlp + FFmpeg |
+| Design | Notion-inspired (Inter font, warm whites, Notion Blue accent) |
+
+---
+
+## 🧪 Test Coverage
 
 ```
+Backend:  78 tests  (config, services, API routes, file management)
+Frontend: 36 tests  (API client, components, integration)
+Total:    114 tests
+```
+
+Every feature was built TDD-style: red → green → refactor. Run the full suite:
+
+```bash
+# Backend
+cd youtube-loader && python -m pytest tests/ -v
+
+# Frontend
+cd frontend-web && npm test
+```
+
+---
+
+## 🔧 Customization
+
+### Add Download Formats
+
+Edit `backend-api/core_services/YoutubeService.py` and add a new format to `_get_format_opts()`.
+
+### Change Default Download Directory
+
+Edit `backend-api/config_settings/AppConfig.py`:
+
+```python
+download_dir: str = "/path/to/your/folder"
+```
+
+### Add CORS Origins for Production
+
+Edit `backend-api/Main.py` to add your production domain:
+
+```python
+allow_origins=["http://localhost:3000", "https://your-domain.com"],
+```
+
+---
+
+## 📝 Development Workflow
+
+This project follows a strict TDD-first workflow:
+
+1. **Write tests first** — define the expected behavior
+2. **Run tests** — they should fail (Red)
+3. **Write minimal code** to make tests pass (Green)
+4. **Refactor** — clean up without changing behavior
+5. **Commit** — small, atomic commits with descriptive messages
+
+Each component, service, and API endpoint has its own test file. The CI should run both test suites.
+
+---
+
+## 📋 Roadmap
+
+- [ ] Persistent job storage (SQLite/Redis instead of in-memory dict)
+- [ ] WebSocket real-time download progress
+- [ ] Playlist support (download all videos in a playlist)
+- [ ] Thumbnail preview before downloading
+- [ ] User authentication (protected downloads)
+- [ ] Dark mode toggle
+- [ ] Subtitle download
+- [ ] Browser extension for one-click downloads
+
+---
+
+## 📄 License
+
+MIT
+
+---
+
+*Built with ❤️ for family — simple enough for mom, powerful enough for devs.*
