@@ -64,11 +64,11 @@ export function DownloadForm() {
         {/* Format Selector */}
         <fieldset className="space-y-3">
           <legend className="text-lg font-medium text-gray-700">เลือกรูปแบบ</legend>
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-3 sm:gap-4">
             {FORMATS.map((fmt) => (
               <label
                 key={fmt.value}
-                className="flex items-center gap-2 text-base font-medium cursor-pointer px-3 py-2 border rounded hover:bg-blue-50"
+                className="flex items-center gap-2 text-base font-medium cursor-pointer px-4 py-3 border rounded-lg hover:bg-blue-50 min-h-[44px]"
               >
                 <input
                   type="radio"
@@ -76,7 +76,7 @@ export function DownloadForm() {
                   value={fmt.value}
                   checked={format === fmt.value}
                   onChange={() => setFormat(fmt.value)}
-                  className="w-4 h-4 accent-blue-600"
+                  className="w-5 h-5 accent-blue-600"
                 />
                 {fmt.label}
               </label>
@@ -88,7 +88,7 @@ export function DownloadForm() {
         <button
           type="submit"
           disabled={loading || url.trim().length === 0}
-          className="w-full px-6 py-4 text-xl font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full px-6 py-4 text-xl font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-h-[56px] active:scale-[0.98]"
         >
           {loading ? 'กำลังดาวน์โหลด...' : 'ดาวน์โหลด'}
         </button>
