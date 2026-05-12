@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: youtube-loader-api
+    env: python
+    region: singapore
+    plan: free
+    rootDir: backend-api
+    buildCommand: "pip install -r Requirements.txt"
+    startCommand: "python Main.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: DOWNLOAD_DIR
+        value: /opt/render/project/src/backend-api/Downloads
+      - key: CORS_ORIGINS
+        value: "https://youtube-loader.pages.dev"

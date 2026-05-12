@@ -1,0 +1,2 @@
+web:
+  cmd: python Main.py
