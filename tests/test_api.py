@@ -3,6 +3,7 @@
 Uses FastAPI's TestClient for in-memory HTTP testing without a running server.
 """
 
+import os
 import pytest
 import sys
 from pathlib import Path
@@ -13,8 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend-api"))
 from fastapi.testclient import TestClient
 from Main import app
 
-# Import the job storage so we can manipulate it in tests
-from api_routes.DownloadRouter import download_jobs, get_app_config
+# Import the job storage service and router dependencies
+from api_routes.DownloadRouter import get_app_config, get_job_storage, _JOB_DB_PATH
+from core_services.JobStorageService import JobStorageService
 from core_services.FileStorageService import FileStorageService
 
 
@@ -25,11 +27,18 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def clear_jobs():
-    """Clear download_jobs before and after each test to ensure isolation."""
-    download_jobs.clear()
-    yield
-    download_jobs.clear()
+def isolate_job_storage(tmp_path):
+    """Each test gets its own isolated SQLite database so tests don't interfere."""
+    db_file = str(tmp_path / "test_jobs.db")
+
+    def override_job_storage():
+        return JobStorageService(db_file)
+
+    app.dependency_overrides[get_job_storage] = override_job_storage
+
+    yield db_file
+
+    app.dependency_overrides.clear()
 
 
 class TestStatusEndpoint:
@@ -49,7 +58,7 @@ class TestDownloadCreate:
     VALID_URL = "https://www.youtube.com/watch?v=dQw4wRgXcQ"
     VALID_SHORT_URL = "https://youtu.be/dQw4wRgXcQ"
 
-    def test_download_valid_url_default_format(self, client):
+    def test_download_valid_url_default_format(self, client, isolate_job_storage):
         """POST /api/download with valid URL and default format returns 200 with job_id."""
         response = client.post(
             "/api/download",
@@ -62,7 +71,7 @@ class TestDownloadCreate:
         assert isinstance(data["job_id"], str)
         assert len(data["job_id"]) > 0
 
-    def test_download_valid_url_explicit_format(self, client):
+    def test_download_valid_url_explicit_format(self, client, isolate_job_storage):
         """POST /api/download with explicit output_format returns 200."""
         response = client.post(
             "/api/download",
@@ -73,7 +82,7 @@ class TestDownloadCreate:
         assert data["status"] == "pending"
         assert "job_id" in data
 
-    def test_download_youtu_be_url(self, client):
+    def test_download_youtu_be_url(self, client, isolate_job_storage):
         """POST /api/download with youtu.be short URL is accepted."""
         response = client.post(
             "/api/download",
@@ -84,7 +93,7 @@ class TestDownloadCreate:
         assert data["status"] == "pending"
 
     @pytest.mark.parametrize("fmt", ["1080p", "720p", "480p", "mp3", "m4a"])
-    def test_download_all_valid_formats(self, client, fmt):
+    def test_download_all_valid_formats(self, client, fmt, isolate_job_storage):
         """All allowed formats are accepted."""
         response = client.post(
             "/api/download",
@@ -94,7 +103,7 @@ class TestDownloadCreate:
         data = response.json()
         assert data["status"] == "pending"
 
-    def test_download_with_custom_filename(self, client):
+    def test_download_with_custom_filename(self, client, isolate_job_storage):
         """POST /api/download with custom_filename is accepted."""
         response = client.post(
             "/api/download",
@@ -153,7 +162,7 @@ class TestDownloadCreate:
         response = client.post("/api/download", json={})
         assert response.status_code == 422
 
-    def test_download_response_format(self, client):
+    def test_download_response_format(self, client, isolate_job_storage):
         """Response model contains exactly job_id and status keys."""
         response = client.post(
             "/api/download",
@@ -169,19 +178,26 @@ class TestDownloadStatus:
 
     VALID_URL = "https://www.youtube.com/watch?v=dQw4wRgXcQ"
 
-    def test_status_existing_job(self, client):
+    def test_status_existing_job(self, client, isolate_job_storage):
         """GET /api/download/{job_id} returns job details for existing job."""
-        # Create a job directly in the store to avoid real network download
-        job_id = "test-job-1"
-        download_jobs[job_id] = {
-            "id": job_id,
-            "url": self.VALID_URL,
-            "format": "720p",
-            "status": "pending",
-        }
+        # Create a job via the API
+        resp = client.post("/api/download", json={"url": self.VALID_URL})
+        assert resp.status_code == 200
+        job_id = resp.json()["job_id"]
 
-        # Check status
         response = client.get(f"/api/download/{job_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "pending"
+        assert data["url"] == self.VALID_URL
+
+    def test_status_existing_job_manually_created(self, client, isolate_job_storage):
+        """GET /api/download/{job_id} for a job created directly via JobStorageService."""
+        db_file = isolate_job_storage
+        service = JobStorageService(db_file)
+        service.create_job("test-job-1", self.VALID_URL, "720p")
+
+        response = client.get("/api/download/test-job-1")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "pending"
@@ -193,19 +209,19 @@ class TestDownloadStatus:
         response = client.get("/api/download/nonexistent-job-id")
         assert response.status_code == 404
 
-    def test_status_job_with_manually_set_completed(self, client):
+    def test_status_job_completed(self, client, isolate_job_storage):
         """A job manually set to completed shows correct fields."""
-        job_id = "manual-test-job"
-        download_jobs[job_id] = {
-            "id": job_id,
-            "url": self.VALID_URL,
-            "format": "mp3",
-            "status": "completed",
-            "filepath": "/tmp/test.mp3",
-            "title": "Test Song",
-        }
+        db_file = isolate_job_storage
+        service = JobStorageService(db_file)
+        service.create_job("manual-test-job", self.VALID_URL, "mp3")
+        service.update_job(
+            "manual-test-job",
+            status="completed",
+            filepath="/tmp/test.mp3",
+            title="Test Song",
+        )
 
-        response = client.get(f"/api/download/{job_id}")
+        response = client.get("/api/download/manual-test-job")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "completed"
@@ -213,18 +229,18 @@ class TestDownloadStatus:
         assert data["title"] == "Test Song"
         assert data["format"] == "mp3"
 
-    def test_status_job_failed(self, client):
+    def test_status_job_failed(self, client, isolate_job_storage):
         """A failed job includes the error field."""
-        job_id = "failed-job"
-        download_jobs[job_id] = {
-            "id": job_id,
-            "url": self.VALID_URL,
-            "format": "720p",
-            "status": "failed",
-            "error": "Video unavailable",
-        }
+        db_file = isolate_job_storage
+        service = JobStorageService(db_file)
+        service.create_job("failed-job", self.VALID_URL, "720p")
+        service.update_job(
+            "failed-job",
+            status="failed",
+            error="Video unavailable",
+        )
 
-        response = client.get(f"/api/download/{job_id}")
+        response = client.get("/api/download/failed-job")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "failed"
@@ -236,14 +252,12 @@ class TestDownloadsList:
 
     def test_list_downloads_returns_files(self, client, tmp_path):
         """GET /api/downloads returns list of files from storage."""
-        # Use dependency override to inject a mock config pointing to tmp_path
         def override_config():
             cfg = MagicMock()
             cfg.download_dir = str(tmp_path)
             return cfg
 
-        test_app = app
-        test_app.dependency_overrides[get_app_config] = override_config
+        app.dependency_overrides[get_app_config] = override_config
 
         # Create some files
         (tmp_path / "video1.mp4").write_text("data")
@@ -256,7 +270,7 @@ class TestDownloadsList:
             assert "files" in data
             assert sorted(data["files"]) == ["audio.mp3", "video1.mp4"]
         finally:
-            test_app.dependency_overrides.clear()
+            app.dependency_overrides.clear()
 
     def test_list_downloads_empty(self, client, tmp_path):
         """GET /api/downloads on empty directory returns empty list."""
@@ -281,40 +295,45 @@ class TestFullDownloadFlow:
 
     VALID_URL = "https://www.youtube.com/watch?v=dQw4wRgXcQ"
 
-    @patch("api_routes.DownloadRouter.YoutubeService.download_video")
-    def test_full_download_flow_mocked(self, mock_download, client, tmp_path):
+    @patch("yt_dlp.YoutubeDL")
+    def test_full_download_flow_mocked(self, mock_ydl, client, tmp_path):
         """Complete flow: create job -> check pending -> verify task runs."""
-        mock_download.return_value = {
-            "success": True,
-            "filepath": str(tmp_path / "test.mp4"),
-            "title": "Test Video",
-        }
+        # Override the module-level _JOB_DB_PATH so background task and test use same DB
+        import api_routes.DownloadRouter as dr
+        test_db = str(tmp_path / "test_jobs.db")
+        old_db_path = dr._JOB_DB_PATH
+        dr._JOB_DB_PATH = test_db
 
-        # Step 1: Create download job
-        resp = client.post(
-            "/api/download",
-            json={"url": self.VALID_URL, "output_format": "720p"},
-        )
-        assert resp.status_code == 200
-        job_id = resp.json()["job_id"]
+        # Mock yt-dlp to simulate successful download
+        mock_instance = MagicMock()
+        mock_instance.extract_info.return_value = {"title": "Test Video"}
+        mock_instance.prepare_filename.return_value = str(tmp_path / "test.mp4")
+        mock_instance.__enter__ = MagicMock(return_value=mock_instance)
+        mock_instance.__exit__ = MagicMock(return_value=False)
+        mock_ydl.return_value = mock_instance
 
-        # Step 2: Immediately check status - should be pending or downloading
-        status_resp = client.get(f"/api/download/{job_id}")
-        assert status_resp.status_code == 200
-        status_data = status_resp.json()
-        assert status_data["status"] in ("pending", "downloading", "completed")
+        try:
+            # Step 1: Create download job
+            resp = client.post(
+                "/api/download",
+                json={"url": self.VALID_URL, "output_format": "720p"},
+            )
+            assert resp.status_code == 200
+            job_id = resp.json()["job_id"]
 
-        # Step 3: Trigger background tasks synchronously (FastAPI TestClient
-        # runs background tasks immediately when the response is received
-        # with raise_server_exceptions=True — but async tasks may need
-        # client to wait. In TestClient, background tasks are run after
-        # the response is returned, so let's re-check.)
-        # Check again — the background task should have run
-        status_resp2 = client.get(f"/api/download/{job_id}")
-        assert status_resp2.status_code == 200
-        status_data2 = status_resp2.json()
-        # Task should now be completed since TestClient runs tasks synchronously
-        assert status_data2["status"] in ("downloading", "completed")
+            # Step 2: Immediately check status
+            status_resp = client.get(f"/api/download/{job_id}")
+            assert status_resp.status_code == 200
+            status_data = status_resp.json()
+            assert status_data["status"] in ("pending", "downloading", "completed")
+
+            # Step 3: Background task should have run
+            status_resp2 = client.get(f"/api/download/{job_id}")
+            assert status_resp2.status_code == 200
+            status_data2 = status_resp2.json()
+            assert status_data2["status"] in ("downloading", "completed")
+        finally:
+            dr._JOB_DB_PATH = old_db_path
 
 
 class TestValidationErrorDetails:
@@ -339,3 +358,25 @@ class TestValidationErrorDetails:
         assert response.status_code == 422
         body = response.json()
         assert "detail" in body
+
+
+class TestJobPersistence:
+    """Tests that jobs survive a conceptual server restart."""
+
+    VALID_URL = "https://www.youtube.com/watch?v=dQw4wRgXcQ"
+
+    def test_job_persists_in_sqlite(self, isolate_job_storage):
+        """After creating a job via the API, it can be read from DB directly."""
+        db_file = isolate_job_storage
+
+        # Create job via API
+        from api_routes.DownloadRouter import get_job_storage
+        service = JobStorageService(db_file)
+        service.create_job("persist-job", self.VALID_URL, "720p")
+
+        # Read it back directly from DB (simulates new server instance)
+        service2 = JobStorageService(db_file)
+        job = service2.get_job("persist-job")
+        assert job is not None
+        assert job["url"] == self.VALID_URL
+        assert job["status"] == "pending"

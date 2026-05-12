@@ -1,34 +1,57 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from typing import Dict, Any
+import os
 import uuid
+from typing import Any
 
-from core_services.YoutubeService import YoutubeService
-from core_services.FileStorageService import FileStorageService
-from config_settings.AppConfig import AppConfig
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+
 from api_models.DownloadRequest import (
     DownloadRequest,
     DownloadResponse,
     StatusResponse,
     ErrorResponse,
 )
+from config_settings.AppConfig import AppConfig
+from core_services.YoutubeService import YoutubeService
+from core_services.JobStorageService import JobStorageService
+from core_services.FileStorageService import FileStorageService
 
 router = APIRouter()
 
-# In-memory storage for download jobs (simplified for Phase 1.1)
-download_jobs: Dict[str, Dict[str, Any]] = {}
+
+# ---------------------------------------------------------------------------
+# Dependency setup
+# ---------------------------------------------------------------------------
+
+_JOB_DB_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "jobs.db",
+)
+
+# Global variable for test overrides / production flexibility
+_job_storage_override: JobStorageService | None = None
 
 
-def get_youtube_service():
+def get_youtube_service() -> YoutubeService:
     return YoutubeService()
 
 
-def get_app_config():
+def get_app_config() -> AppConfig:
     return AppConfig()
 
 
-def get_storage_service(config: AppConfig = Depends(get_app_config)):
+def get_storage_service(
+    config: AppConfig = Depends(get_app_config),
+) -> FileStorageService:
     return FileStorageService(config.download_dir)
 
+
+def get_job_storage() -> JobStorageService:
+    return JobStorageService(_JOB_DB_PATH)
+
+
+# ---------------------------------------------------------------------------
+# Background task
+# ---------------------------------------------------------------------------
 
 async def run_download_task(
     job_id: str,
@@ -36,39 +59,51 @@ async def run_download_task(
     output_format: str,
     output_dir: str,
     yt_service: YoutubeService,
-):
-    download_jobs[job_id]["status"] = "downloading"
+    db_path: str,
+) -> None:
+    job_storage = JobStorageService(db_path)
+    job_storage.update_job(job_id, status="downloading")
+
     result = yt_service.download_video(url, output_format, output_dir)
     if result["success"]:
-        download_jobs[job_id]["status"] = "completed"
-        download_jobs[job_id]["filepath"] = result["filepath"]
-        download_jobs[job_id]["title"] = result["title"]
+        job_storage.update_job(
+            job_id,
+            status="completed",
+            filepath=result["filepath"],
+            title=result["title"],
+        )
     else:
-        download_jobs[job_id]["status"] = "failed"
-        download_jobs[job_id]["error"] = result.get("error")
+        job_storage.update_job(
+            job_id,
+            status="failed",
+            error=result.get("error"),
+        )
 
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @router.post(
     "/download",
     response_model=DownloadResponse,
-    responses={
-        422: {"model": ErrorResponse, "description": "Validation error"},
-    },
+    responses={422: {"model": ErrorResponse, "description": "Validation error"}},
 )
 async def start_download(
     request: DownloadRequest,
     background_tasks: BackgroundTasks,
     yt_service: YoutubeService = Depends(get_youtube_service),
     config: AppConfig = Depends(get_app_config),
-):
+    job_storage: JobStorageService = Depends(get_job_storage),
+) -> DownloadResponse:
     """Start downloading a YouTube video."""
     job_id = str(uuid.uuid4())
-    download_jobs[job_id] = {
-        "id": job_id,
-        "url": request.url,
-        "format": request.output_format,
-        "status": "pending",
-    }
+
+    job_storage.create_job(
+        job_id=job_id,
+        url=request.url,
+        output_format=request.output_format,
+    )
 
     background_tasks.add_task(
         run_download_task,
@@ -77,6 +112,7 @@ async def start_download(
         request.output_format,
         config.download_dir,
         yt_service,
+        _JOB_DB_PATH,
     )
 
     return DownloadResponse(job_id=job_id, status="pending")
@@ -85,17 +121,21 @@ async def start_download(
 @router.get(
     "/download/{job_id}",
     response_model=StatusResponse,
-    responses={
-        404: {"model": ErrorResponse, "description": "Job not found"},
-    },
+    responses={404: {"model": ErrorResponse, "description": "Job not found"}},
 )
-async def get_download_status(job_id: str):
+async def get_download_status(
+    job_id: str,
+    job_storage: JobStorageService = Depends(get_job_storage),
+) -> StatusResponse:
     """Get the download status for a given job ID."""
-    if job_id not in download_jobs:
+    job = job_storage.get_job(job_id)
+    if job is None:
         raise HTTPException(
-            status_code=404, detail=ErrorResponse(detail="Download job not found", code=404).model_dump()
+            status_code=404,
+            detail=ErrorResponse(
+                detail="Download job not found", code=404
+            ).model_dump(),
         )
-    job = download_jobs[job_id]
     return StatusResponse(
         url=job.get("url"),
         status=job.get("status"),
@@ -109,6 +149,6 @@ async def get_download_status(job_id: str):
 @router.get("/downloads")
 async def list_downloads(
     storage_service: FileStorageService = Depends(get_storage_service),
-):
+) -> dict[str, Any]:
     """List all downloaded files."""
     return {"files": storage_service.list_files()}
