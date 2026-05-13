@@ -1,9 +1,6 @@
 // src/lib/api.ts
 
-const API_BASE =
-  typeof import.meta !== 'undefined' && import.meta.env?.NEXT_PUBLIC_API_URL
-    ? import.meta.env.NEXT_PUBLIC_API_URL
-    : 'http://localhost:8000'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface DownloadRequest {
   url: string
