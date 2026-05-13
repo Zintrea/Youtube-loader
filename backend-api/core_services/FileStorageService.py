@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from typing import List
 
@@ -28,6 +29,29 @@ class FileStorageService:
             List of filenames (strings).
         """
         return [f.name for f in self.base_dir.iterdir() if f.is_file()]
+
+    def cleanup_old_files(self, max_age_minutes: int = 60) -> int:
+        """Delete files older than max_age_minutes.
+
+        Args:
+            max_age_minutes: Maximum age in minutes (default: 60).
+
+        Returns:
+            Number of files deleted.
+        """
+        deleted_count = 0
+        now = time.time()
+        threshold = max_age_minutes * 60
+
+        for item in self.base_dir.iterdir():
+            if not item.is_file():
+                continue
+            age_seconds = now - item.stat().st_mtime
+            if age_seconds >= threshold:
+                item.unlink()
+                deleted_count += 1
+
+        return deleted_count
 
     def delete_file(self, filename: str) -> bool:
         """Delete a file from the base directory.
